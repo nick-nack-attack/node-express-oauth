@@ -55,9 +55,68 @@ Your code here
 */
 
 app.get('/authorize', (req,res) => {
-	clients.includes(req.query(client_id))
-		? res.status(200).end()
-		: res.status(401).end()
+	const clientId = req.query.client_id;
+	const client = clients[clientId];
+	if (!client) {
+		res
+			.status(401)
+			.send("Error: client not authorized");
+	}
+	if (
+		typeof req.query.scope !== "string" ||
+		!containsAll(client.scopes, req.query.scope.split(" ") )
+	) {
+		res
+			.status(401)
+			.send("Error: invalid scopes requested");
+	}
+	const requestId = randomString();
+	// requests.push(requestId);
+	// the index is the request id, which is included in the request
+	requests[requestId] = req.query;
+	res.render("login", {
+		client,
+		scope: req.query.scope, // set the scope to what is passed in with the query
+		requestId
+		})
+})
+app.post("/approve", (req, res) => {
+	const {
+		userName,
+		password,
+		requestId
+	} = req.body;
+	if (
+		!userName ||
+		users[userName] !== password
+	) {
+		res
+			.status(401)
+			.send("Error: user not authorized")
+	}
+	const clientReq = requests[requestId];
+	delete requests[requestId]; // delete it from the object once obtained
+	if (!clientReq) {
+		res
+			.status(401)
+			.send("Error: invalid user request")
+	}
+	const code = randomString();
+	authorizationCodes[code] = { clientReq, userName }; // create a new object containing user request and user name
+	const redirectUrl = url.parse(clientReq.redirect_url);
+	redirectUrl.query = {
+		code,
+		state: clientReq.state
+	}
+	res.redirect(url, format(redirectUrl));
+})
+app.post("/token", (req, res) => {
+	let authCredentials = req.headers.authorization;
+	if (!authCredentials) {
+		res
+			.status(401)
+			.send("Error: not authorized")
+	}
 })
 
 const server = app.listen(config.port, "localhost", function () {
