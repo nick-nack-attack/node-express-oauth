@@ -1,3 +1,4 @@
+const url = require("url")
 const express = require("express")
 const bodyParser = require("body-parser")
 const axios = require("axios").default
@@ -23,22 +24,22 @@ app.use(timeout)
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }))
 
-app.get("/authorize", ((req, res) => {
-	state = randomString();
-	const redirectURL = url.parse(config.authorizationEndpoint);
-	redirectURL.query = {
+app.get("/authorize", (req, res) => {
+	state = randomString()
+	const redirectUrl = url.parse(config.authorizationEndpoint)
+	redirectUrl.query = {
 		response_type: "code",
 		client_id: config.clientId,
 		redirect_uri: config.redirectUri,
 		scope: "permission:name permission:date_of_birth",
-		state: state
+		state: state,
 	}
-	res.redirect(url.format(redirectURL));
-}))
+	res.redirect(url.format(redirectUrl))
+})
+
 app.get("/callback", (req, res) => {
-	if (!req.query.state !== state) {
+	if (req.query.state !== state) {
 		res.status(403).send("Error: state mismatch");
-		return;
 	}
 	const { code } = req.query;
 	axios({
