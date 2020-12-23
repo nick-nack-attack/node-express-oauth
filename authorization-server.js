@@ -1,13 +1,14 @@
-const fs = require("fs")
-const express = require("express")
-const bodyParser = require("body-parser")
-const jwt = require("jsonwebtoken")
+const url = require("url");
+const fs = require("fs");
+const express = require("express");
+const bodyParser = require("body-parser");
+const jwt = require("jsonwebtoken");
 const {
 	randomString,
 	containsAll,
 	decodeAuthCredentials,
 	timeout,
-} = require("./utils")
+} = require("./utils");
 
 const config = {
 	port: 9001,
@@ -18,7 +19,7 @@ const config = {
 	redirectUri: "http://localhost:9000/callback",
 
 	authorizationEndpoint: "http://localhost:9001/authorize",
-}
+};
 
 const clients = {
 	"my-client": {
@@ -31,92 +32,126 @@ const clients = {
 		clientSecret: "TestSecret",
 		scopes: ["permission:name"],
 	},
-}
+};
 
 const users = {
 	user1: "password1",
 	john: "appleseed",
-}
+};
 
-const requests = {}
-const authorizationCodes = {}
+const requests = {};
+const authorizationCodes = {};
 
-let state = ""
+let state = "";
 
-const app = express()
-app.set("view engine", "ejs")
-app.set("views", "assets/authorization-server")
-app.use(timeout)
-app.use(bodyParser.json())
-app.use(bodyParser.urlencoded({ extended: true }))
+const app = express();
+app.set("view engine", "ejs");
+app.set("views", "assets/authorization-server");
+app.use(timeout);
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
-/*
-Your code here
-*/
-
-app.get('/authorize', (req,res) => {
+app.get("/authorize", (req, res) => {
 	const clientId = req.query.client_id;
 	const client = clients[clientId];
 	if (!client) {
 		res
 			.status(401)
 			.send("Error: client not authorized");
+		return;
 	}
 	if (
 		typeof req.query.scope !== "string" ||
-		!containsAll(client.scopes, req.query.scope.split(" ") )
+		!containsAll(
+			client.scopes,
+			req.query.scope.split(" ")
+		)
 	) {
 		res
 			.status(401)
 			.send("Error: invalid scopes requested");
+		return;
 	}
 	const requestId = randomString();
-	// requests.push(requestId);
-	// the index is the request id, which is included in the request
 	requests[requestId] = req.query;
 	res.render("login", {
 		client,
-		scope: req.query.scope, // set the scope to what is passed in with the query
+		scope: req.query.scope,
 		requestId
-		})
+	})
 })
+
 app.post("/approve", (req, res) => {
-	const {
-		userName,
-		password,
-		requestId
-	} = req.body;
-	if (
-		!userName ||
-		users[userName] !== password
-	) {
+	const { userName, password, requestId } = req.body;
+	if (!userName || users[userName] !== password) {
 		res
 			.status(401)
-			.send("Error: user not authorized")
+			.send("Error: user not authorized");
+		return;
 	}
 	const clientReq = requests[requestId];
-	delete requests[requestId]; // delete it from the object once obtained
+	delete requests[requestId];
 	if (!clientReq) {
 		res
 			.status(401)
-			.send("Error: invalid user request")
+			.send("Error: invalid user request");
+		return;
 	}
 	const code = randomString();
-	authorizationCodes[code] = { clientReq, userName }; // create a new object containing user request and user name
-	const redirectUrl = url.parse(clientReq.redirect_url);
-	redirectUrl.query = {
+	authorizationCodes[code] = { clientReq, userName };
+	const redirectUri = url.parse(clientReq.redirect_uri);
+	redirectUri.query = {
 		code,
 		state: clientReq.state
 	}
-	res.redirect(url, format(redirectUrl));
+	res.redirect(url.format(redirectUri));
 })
+
 app.post("/token", (req, res) => {
 	let authCredentials = req.headers.authorization;
 	if (!authCredentials) {
 		res
 			.status(401)
-			.send("Error: not authorized")
+			.send("Error: not authorized");
+		return;
 	}
+	const {
+		clientId,
+		clientSecret
+	} = decodeAuthCredentials(authCredentials);
+	const client = clients[clientId];
+	if (!client || client.clientSecret !== clientSecret) {
+		res
+			.status(401)
+			.send("Error: client not authorized");
+		return;
+	}
+	const code = req.body.code;
+	if (!code || !authorizationCodes[code]) {
+		res
+			.status(401)
+			.send("Error: invalid code");
+		return;
+	}
+	const { clientReq, userName } = authorizationCodes[code];
+	delete authorizationCodes[code];
+	const token = jwt.sign(
+		{
+			userName,
+			scope: clientReq.scope
+		},
+		config.privateKey,
+		{
+			algorithm: "RS256",
+			expiresIn: 300,
+			issuer: "http://localhost:" + config.port
+		}
+	)
+	res.json({
+		access_token: token,
+		token_type: "Bearer",
+		scope: clientReq.scope
+	})
 })
 
 const server = app.listen(config.port, "localhost", function () {
