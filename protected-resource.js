@@ -1,6 +1,7 @@
 const express = require("express")
 const bodyParser = require("body-parser")
 const fs = require("fs")
+const jwt = require("jsonwebtoken");
 const { timeout } = require("./utils")
 
 const config = {
@@ -28,9 +29,29 @@ app.use(timeout)
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }))
 
-/*
-Your code here
-*/
+app.get("/user-info", ((req, res) => {
+	if(!req.headers.authorization) {
+		res.status(401).send("Error: cannot authorize headers");
+	}
+	const token = req.headers.authorization.slice(7);
+	jwt.verify(token, config.publicKey, {algorithms: ["RS256"]}, (err, payload) => {
+		if (err) {
+			res.status(401).send("Error: cannot authorize token");
+		}
+		try {
+			const scopes = payload.scope.split(" ");
+			const eachScope = scopes.map(itm => itm.slice(11));
+			res.json({
+				"name": users["john"].name,
+				"date_of_birth": users["john"].date_of_birth
+			})
+		} catch (err) {
+			res.status(401).send("Error: Something went wrong");
+		}
+	})
+
+
+}))
 
 const server = app.listen(config.port, "localhost", function () {
 	var host = server.address().address
