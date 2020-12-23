@@ -31,25 +31,36 @@ app.use(bodyParser.urlencoded({ extended: true }))
 
 app.get("/user-info", ((req, res) => {
 	if(!req.headers.authorization) {
-		res.status(401).send("Error: cannot authorize headers");
+		res
+			.status(401)
+			.send("Error: cannot authorize headers");
 	}
-	const token = req.headers.authorization.slice(7);
-	jwt.verify(token, config.publicKey, {algorithms: ["RS256"]}, (err, payload) => {
-		if (err) {
-			res.status(401).send("Error: cannot authorize token");
-		}
-		try {
-			const scopes = payload.scope.split(" ");
-			const eachScope = scopes.map(itm => itm.slice(11));
-			res.json({
-				"name": users["john"].name,
-				"date_of_birth": users["john"].date_of_birth
-			})
-		} catch (err) {
-			res.status(401).send("Error: Something went wrong");
-		}
+	const authToken = req.headers.authorization.slice("bearer ".length);
+	let userData;
+	try {
+		userData = jwt.verify(
+			authToken,
+			config.publicKey, {
+				algorithms: ["RS256"]
+			});
+	} catch (err) {
+		res
+			.status(401)
+			.send("Error: client unauthorized");
+	}
+	if (!userData) {
+		res
+			.status(401)
+			.send("Error: cannot authorize token");
+	}
+	const userWithRestrictedFields = {};
+	const user = users[userData.userName];
+	const scope = userData.scope.split(" ");
+	scope.map(item => {
+		const field = item.slice("permission:".length);
+		userWithRestrictedFields[field] = user[field];
 	})
-
+	res.json(userWithRestrictedFields);
 
 }))
 
